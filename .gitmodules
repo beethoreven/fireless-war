@@ -4,3 +4,6 @@
 [submodule "fireless-war-web"]
 	path = fireless-war-web
 	url = git@github.com-beethoreven:beethoreven/fireless-war-web.git
+[submodule "router-backend"]
+	path = router-backend
+	url = git@github.com-beethoreven:beethoreven/router-backend.git
