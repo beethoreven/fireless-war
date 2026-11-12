@@ -43,7 +43,7 @@ git commit -m "Update fireless-war-backend submodule pointer"
 
 ## English
 
-The project-overview repo for *Fireless War 2*, wiring its subsystems together via git submodules so the whole codebase can be pulled with a single `clone`. This repo itself **is never deployed** — each subsystem connects to its own repo for deployment (see the table below); this one is purely a unified local-dev entry point. For technical details and architecture decisions, see each subsystem's own README (especially the full project report in [`fireless-war-backend`](https://github.com/beethoreven/fireless-war-backend)).
+The project-overview repo for *Dreaming of a damp squib 2 - Fireless War*, wiring its subsystems together via git submodules so the whole codebase can be pulled with a single `clone`. This repo itself **is never deployed** — each subsystem connects to its own repo for deployment (see the table below); this one is purely a unified local-dev entry point. For technical details and architecture decisions, see each subsystem's own README (especially the full project report in [`fireless-war-backend`](https://github.com/beethoreven/fireless-war-backend)).
 
 ### Subsystems
 
