@@ -8,7 +8,7 @@
 
 | 子系統 | Repo | 部署 |
 |---|---|---|
-| 後端 API | [`fireless-war-backend`](https://github.com/beethoreven/fireless-war-backend) | Render(`https://fireless-war-backend.onrender.com`) |
+| 後端 API | [`router-backend`](https://github.com/beethoreven/router-backend) 的 `apps/fireless_war/`(好幾個專案共用的後端) | Render(`https://router-backend-3hl2.onrender.com/fireless-war`) |
 | 前端網站 | [`fireless-war-web`](https://github.com/beethoreven/fireless-war-web) | GitHub Pages(從 repo 根目錄) |
 
 未來會加入的子系統(DB、mobile)用同樣方式以 `git submodule add` 掛進來。
@@ -30,11 +30,11 @@ git submodule update --init --recursive
 **更新某個子模組到它自己 repo 的最新版本:**
 
 ```bash
-cd fireless-war-backend   # 或 fireless-war-web
+cd fireless-war-web   # 或 router-backend
 git pull origin main
 cd ..
-git add fireless-war-backend
-git commit -m "Update fireless-war-backend submodule pointer"
+git add fireless-war-web
+git commit -m "Update fireless-war-web submodule pointer"
 ```
 
 最後這個 `git add` + `commit` 不能省略——沒做的話,子模組本機檔案雖然是新的,但這個 wrapper repo 記錄的「該指向哪個 commit」還是舊的,別人 `clone` 這個 repo 還是會抓到舊版本。
@@ -49,7 +49,7 @@ The project-overview repo for *Dreaming of a damp squib 2 - Fireless War*, wirin
 
 | Subsystem | Repo | Deployment |
 |---|---|---|
-| Backend API | [`fireless-war-backend`](https://github.com/beethoreven/fireless-war-backend) | Render (`https://fireless-war-backend.onrender.com`) |
+| Backend API | [`router-backend`](https://github.com/beethoreven/router-backend), `apps/fireless_war/` (a backend shared by several projects) | Render (`https://router-backend-3hl2.onrender.com/fireless-war`) |
 | Frontend | [`fireless-war-web`](https://github.com/beethoreven/fireless-war-web) | GitHub Pages (served from repo root) |
 
 Future subsystems (DB, mobile) will be wired in the same way via `git submodule add`.
@@ -71,11 +71,11 @@ git submodule update --init --recursive
 **Updating a submodule to its own repo's latest version:**
 
 ```bash
-cd fireless-war-backend   # or fireless-war-web
+cd fireless-war-web   # or router-backend
 git pull origin main
 cd ..
-git add fireless-war-backend
-git commit -m "Update fireless-war-backend submodule pointer"
+git add fireless-war-web
+git commit -m "Update fireless-war-web submodule pointer"
 ```
 
 That final `git add` + `commit` cannot be skipped — without it, the submodule's local files are up to date, but this wrapper repo's recorded "which commit to point at" is still stale, so anyone else who `clone`s this repo will still get the old version.
