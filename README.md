@@ -9,7 +9,7 @@
 | 子系統 | Repo | 部署 |
 |---|---|---|
 | 後端 API | [`router-backend`](https://github.com/beethoreven/router-backend) 的 `apps/fireless_war/`(好幾個專案共用的後端) | Render(`https://router-backend-3hl2.onrender.com/fireless-war`) |
-| 前端網站 | [`fireless-war-web`](https://github.com/beethoreven/fireless-war-web) | GitHub Pages(從 repo 根目錄) |
+| 前端網站 | [`fireless-war-web`](https://github.com/fireless-war/fireless-war-web) | GitHub Pages(從 repo 根目錄) |
 
 未來會加入的子系統(DB、mobile)用同樣方式以 `git submodule add` 掛進來。
 
@@ -149,7 +149,7 @@ The project-overview repo for *Dreaming of a damp squib 2 - Fireless War*, wirin
 | Subsystem | Repo | Deployment |
 |---|---|---|
 | Backend API | [`router-backend`](https://github.com/beethoreven/router-backend), `apps/fireless_war/` (a backend shared by several projects) | Render (`https://router-backend-3hl2.onrender.com/fireless-war`) |
-| Frontend | [`fireless-war-web`](https://github.com/beethoreven/fireless-war-web) | GitHub Pages (served from repo root) |
+| Frontend | [`fireless-war-web`](https://github.com/fireless-war/fireless-war-web) | GitHub Pages (served from repo root) |
 
 Future subsystems (DB, mobile) will be wired in the same way via `git submodule add`.
 
