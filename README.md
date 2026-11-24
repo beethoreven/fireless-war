@@ -62,6 +62,8 @@ Flask,跑在 router-backend 這個共用服務裡:整個服務是一支 gunicorn
 
 **Google Sheets 存取。** 用 `gspread` + Service Account 憑證唯讀存取。Google Sheets API 配額是「每個 Service Account 身分每分鐘 60 次讀取」,因此一個請求裡的所有讀取都合併成單次 `values_batch_get` 呼叫(`google_access.py` 的 `sheet_batch_read`),而不是逐格分開打 API——`/round` 原本要打 8 次 API,合併後只需要 1 次。`/round` 另外掛了 Flask-Limiter 的**全站共用**(不分 IP、不分主持人)`30 次/分鐘`限制,因為要保護的是全站共用的單一 Service Account 配額,不是防止單一使用者太活躍。這個限制只對**通過驗證的請求**扣額度(`deduct_when`,401 與 503 不算)——Flask-Limiter 的檢查發生在身分驗證之前,如果連未登入的 401 都算進去,任何陌生人都能靠灌爆這個共用額度,把所有主持人鎖在門外一整分鐘。計數存在行程記憶體裡,服務只有 1 個 worker,所以不會各算各的。
 
+**其他限流。** 跟 `/round` 一樣只計通過驗證的請求:`GET /record` 全站每分鐘 10 次;`POST /record` 全站每分鐘 3 次、每小時 20 次(建立場次要等 Apps Script 把檔案複製完,一次最多佔住共用服務的一條 thread 30 秒)。`/auth/status` 則是**每個登入憑證**各自每分鐘 10 次,不是全站共用——任何 Google 帳號都拿得到有效的登入憑證(demo 對所有人開放),全站共用的話,任何人都能把主持人鎖在門外。
+
 **建立新場次檔案:為什麼要繞一圈用 Apps Script。** 直接用 Service Account 呼叫 Google Drive API 複製 Template 有兩條路,都走不通:
 1. Service Account 直接 `copy()`:報 `storageQuotaExceeded`——Service Account 沒有自己的 Drive 儲存額度,無法擁有新建立的檔案,這是 Google 對這種身分類型的結構性限制。
 2. OAuth(代表真人帳號)+ Google Picker:理論上能繞開額度問題,但實測下來,Picker 選取既有檔案後的授權登記一直沒有生效(`files.get` 持續回 404)。
@@ -87,13 +89,15 @@ Flask,跑在 router-backend 這個共用服務裡:整個服務是一支 gunicorn
 | `FIRELESS_WAR__APPS_SCRIPT_URL` | Apps Script Web App 的網址 |
 | `FIRELESS_WAR__APPS_SCRIPT_SECRET` | 呼叫 Apps Script 的共用密鑰 |
 | `FIRELESS_WAR__ALLOWED_ORIGINS` | 允許跨來源呼叫的確切網址(逗號分隔) |
-| `FIRELESS_WAR__SPREADSHEET_ID` | 選填;`/round` 沒帶 `spreadsheet_id` 時的備用 |
+| `FIRELESS_WAR__SPREADSHEET_ID` | 選填;主持人的 `/round` 沒帶 `spreadsheet_id` 時的備用(demo 不會用) |
 
 必填的少了任何一個,本專案的每個請求都回 `503`(`not_configured`),`/fireless-war/ready` 會列出缺了哪些;共用服務裡的其他專案不受影響。
 
 **其他安全性強化。**
 - **CORS**:只允許 `FIRELESS_WAR__ALLOWED_ORIGINS` 列出的確切網址,並明確放行 `Authorization` header(沒有這行,瀏覽器的 CORS 預檢會擋下這個 header)。
 - **SRI(Subresource Integrity)**:前端引入的 Chart.js / chartjs-plugin-datalabels CDN script 都加了 SRI hash,防止 CDN 被竄改後注入惡意程式碼(Google Identity Services 的 script 刻意不加,因為它的內容本來就會隨時變動)。
+- **CSP(Content Security Policy)**:前端兩頁都宣告了來源白名單——腳本只能來自本站、兩支釘了版本的 CDN 檔與 Google 登入,連線只能到後端與 Google 登入。
+- **防嵌入**:頁面被別的網站用 iframe 嵌入時,整頁不顯示、程式也不執行,避免點擊劫持(GitHub Pages 不能設 `X-Frame-Options` 或 `frame-ancestors` 標頭,所以由頁面自己判斷)。
 - **錯誤回應**:統一回 `{"error", "code"}`,不把套件內部的錯誤訊息原文回給前端;請求內容上限 16 KB。
 
 **Render 免費方案的 Keep-Alive。** Render 免費方案閒置約 15 分鐘會休眠,喚醒(cold start)可能要 30~90 秒以上。前端只要分頁還開著,一載入就先打一次共用服務的 `/health`,之後每 5 分鐘再打一次——只要主持人在玩,後端就不會閒置超過 15 分鐘。`/health` 不載入任何專案、不碰資料庫,也不回 CORS 標頭;前端只需要請求送到、不讀回應,所以用 `no-cors`。不用 GitHub Actions 排程,是因為實測 `schedule` 觸發的間隔常常拉長到 1~4 小時,遠超過休眠門檻。
@@ -123,9 +127,9 @@ Vanilla JavaScript(無框架、無建置流程),`Chart.js` + `chartjs-plugin-dat
 
 **資料視覺化邏輯。** 每位角色的五項事業(正當事業/闇金/色情/毒品/軍火)畫成長條圖,Y 軸固定 0–25。三個全域轉換開關(`oniwara_out`/`mike_out`/`kouno_single`)會改變顯示邏輯——例如 `oniwara_out=true` 時,鬼原響介的事業「洗白」,顯示名稱與計入合法/非法事業的方式都會改變。共同數據面板會即時判斷「合法事業 vs 非法事業」的差距,超過閾值顯示崩壞警示;若 `Global_Param!B10` 開關開啟,額外計算並顯示「風頭事業」(非法事業四類加總最高者,同分時毒品優先於金融、軍火、色情)。
 
-**Google 登入 UI。** 登入狀態只在第一頁顯示,進入第二頁後自動隱藏。不做任何 client-side 持久化(沒有用 localStorage/cookie 存 token)——重新整理後靠 Google Identity Services 的靜默重新登入(`prompt({auto_select:true})`)嘗試無感恢復;如果瀏覽器裡有多個 Google 帳號同時登入,Google 會要求手動選一次帳號(這是 Google 平台自身的隱私限制)。刻意不做持久化的原因:存了 token,主持人被從白名單移除後,舊分頁可能要等 token 真的過期才會感覺到權限被收回;不存,才能保證後端白名單一改,下次重新整理立刻生效。
+**Google 登入 UI。** 登入狀態只在第一頁顯示,進入第二頁後自動隱藏。不做任何 client-side 持久化(沒有用 localStorage/cookie 存 token)——重新整理後靠 Google Identity Services 的靜默重新登入嘗試無感恢復(初始化 `initialize()` 時開啟 `auto_select`,再呼叫不帶參數的 `prompt()`);如果瀏覽器裡有多個 Google 帳號同時登入,Google 會要求手動選一次帳號(這是 Google 平台自身的隱私限制)。刻意不做持久化的原因:存了 token,主持人被從白名單移除後,舊分頁可能要等 token 真的過期才會感覺到權限被收回;不存,才能保證後端白名單一改,下次重新整理立刻生效。
 
-**英文 Demo(`/demo/`)。** 給公開展示用的英文版,流程與正式版相同,差別在:任何 Google 帳號登入即可使用(不檢查白名單)、打 `/demo-record`、`/demo-round`、複製的是 `FirelessWar_Demo` 而不是正式 Template、角色換成通用名稱。因為對所有人開放,限流較嚴:`/demo-record` 查詢與建立各 `10 次/小時`、`/demo-round` `10 次/分鐘`(全站共用)。
+**英文 Demo(`/demo/`)。** 給公開展示用的英文版,流程與正式版相同,差別在:任何 Google 帳號登入即可使用(不檢查白名單)、打 `/demo-record`、`/demo-round`、複製的是 `FirelessWar_Demo` 而不是正式 Template、角色換成通用名稱。因為對所有人開放,限流較嚴:`/demo-record` 查詢與建立各 `10 次/小時`、`/demo-round` `10 次/分鐘`(全站共用)。`/demo-round` 只讀 demo 場次檔(檔名是 `FirelessWar_Demo_` 加日期時間的試算表),其他試算表一律拒絕,也不會退回正式設定的試算表——否則任何 Google 帳號都能透過 demo 讀到服務帳號讀得到的其他試算表。
 
 #### 資料流程總覽
 
@@ -135,7 +139,7 @@ Vanilla JavaScript(無框架、無建置流程),`Chart.js` + `chartjs-plugin-dat
 
 - `oniwara_out`/`mike_out`/`kouno_single` 三個轉換開關、以及「城市經濟崩壞」這個最嚴重等級的警示,目前都只用合成測試資料驗證過邏輯,還沒在真實遊戲中實際觸發驗證過。
 - `最終結算`(FinalDayResult)這個回合是否要有特殊畫面表現,尚未決定。
-- `GET /round?spreadsheet_id=` 不會驗證這個 ID 是不是「合法建立過的場次檔案」,理論上帶入任意 Service Account 讀得到的 Sheet ID 也會嘗試讀取。
+- 主持人的 `GET /round?spreadsheet_id=` 不會驗證這個 ID 是不是「合法建立過的場次檔案」,理論上帶入任意 Service Account 讀得到的 Sheet ID 也會嘗試讀取(只有白名單裡的主持人能呼叫;demo 的 `/demo-round` 只讀 demo 場次檔)。
 - 剛建立完場次就馬上按讀取,可能還是回 404、再次跳出新建對話框:查詢靠 Drive 的檔名搜尋,新檔案要過幾秒才搜得到。等幾秒重試即可。
 
 ---
@@ -202,6 +206,8 @@ Flask, running inside router-backend, a shared service: one gunicorn process (1 
 
 **Google Sheets access.** Read-only access via `gspread` with Service Account credentials. Google's Sheets API quota is 60 reads/minute per Service Account identity, so all reads within one request are merged into a single `values_batch_get` call (`sheet_batch_read` in `google_access.py`) instead of one call per cell/range — `/round` used to make 8 separate API calls per request, now just 1. `/round` also carries a Flask-Limiter rate limit of 30/minute that is **global** (not per-IP, not per-GM), because the resource being protected is the shared Service Account quota itself, not any single user's activity. The limit only deducts for requests that pass authentication (`deduct_when`; 401s and 503s don't count) — Flask-Limiter's check runs before authentication, so counting unauthenticated 401s too would let any stranger exhaust the shared budget and lock every GM out for a full minute. Counters live in process memory; the service runs a single worker, so they are never split.
 
+**Other rate limits.** Like `/round`, these count only requests that pass authentication: `GET /record` 10/minute site-wide; `POST /record` 3/minute and 20/hour site-wide (creating a session waits for Apps Script to finish copying the file, holding one of the shared service's threads for up to 30 s). `/auth/status` is limited **per sign-in**, 10/minute, not site-wide — any Google account can get a valid sign-in token (the demo is open to everyone), so a site-wide counter would let anyone lock the GMs out.
+
 **Why creating a new session file goes through Apps Script.** There are two ways to copy the Template with the Google Drive API directly, and neither works:
 1. Direct Service Account `copy()`: fails with `storageQuotaExceeded` — Service Accounts have no Drive storage quota of their own and structurally cannot own newly-created files.
 2. OAuth (real user identity) + Google Picker: should sidestep the quota issue, but in testing, the authorization granted after picking an existing file never took effect (`files.get` kept returning 404).
@@ -227,13 +233,15 @@ The backend deliberately distinguishes two kinds of "verification failed": a gen
 | `FIRELESS_WAR__APPS_SCRIPT_URL` | The Apps Script Web App URL |
 | `FIRELESS_WAR__APPS_SCRIPT_SECRET` | Shared secret for calling Apps Script |
 | `FIRELESS_WAR__ALLOWED_ORIGINS` | Exact origins allowed to make cross-origin calls (comma-separated) |
-| `FIRELESS_WAR__SPREADSHEET_ID` | Optional; fallback when `/round` is called without `spreadsheet_id` |
+| `FIRELESS_WAR__SPREADSHEET_ID` | Optional; fallback when a GM's `/round` is called without `spreadsheet_id` (the demo never uses it) |
 
 If any required one is missing, every request to this project returns `503` (`not_configured`) and `/fireless-war/ready` lists which ones are missing; the other projects in the shared service are unaffected.
 
 **Other security hardening.**
 - **CORS**: only the exact origins listed in `FIRELESS_WAR__ALLOWED_ORIGINS`, with `Authorization` explicitly allowed in preflight (without it, the browser's CORS preflight blocks the header and every authenticated call fails).
 - **SRI (Subresource Integrity)**: the Chart.js / chartjs-plugin-datalabels CDN `<script>` tags carry SRI hashes to guard against a compromised CDN injecting malicious code (Google Identity Services' script deliberately has none, since its content is expected to change server-side).
+- **CSP (Content Security Policy)**: both pages declare an allowlist — scripts only from this site, the two version-pinned CDN files and Google sign-in; connections only to the backend and Google sign-in.
+- **No framing**: when a page is loaded inside another site's iframe, it hides itself and doesn't run, to prevent clickjacking (GitHub Pages can't set `X-Frame-Options` or `frame-ancestors` headers, so the page checks for itself).
 - **Error responses**: always `{"error", "code"}`; library-internal error text is never passed through to the frontend. Request bodies are capped at 16 KB.
 
 **Keep-alive for Render's free tier.** Render's free tier sleeps after ~15 minutes idle; waking up (cold start) can take 30–90+ seconds. As long as a tab is open, the frontend pings the shared service's `/health` once on load and every 5 minutes after — as long as a GM is playing, the backend never sees 15 minutes of idle. `/health` loads no project, touches no database, and sends no CORS headers; the frontend only needs the request to arrive, not to read the response, so it uses `no-cors`. A GitHub Actions schedule isn't used because, measured, its `schedule` trigger often stretched gaps to 1–4 hours, far beyond the sleep threshold.
@@ -263,9 +271,9 @@ Vanilla JavaScript (no framework, no build step), `Chart.js` + `chartjs-plugin-d
 
 **Data visualization logic.** Each character's five business categories (general/finance/sex/drug/arms) render as a bar chart, Y-axis fixed at 0–25. Three global toggles (`oniwara_out`/`mike_out`/`kouno_single`) change display logic — e.g. when `oniwara_out` is true, Oniwara's businesses "go legitimate," changing both their display labels and how they're counted toward legal vs. illegal totals. The common-data panel evaluates the legal-vs-illegal gap live and shows a collapse warning past a threshold; if the `Global_Param!B10` toggle is on, it additionally computes and shows the "hot business" (the illegal category with the highest summed level across characters, ties broken drug > finance > arms > sex).
 
-**Google sign-in UI.** The sign-in UI only appears on page 1, auto-hidden from page 2 onward. There is no client-side persistence (no token in localStorage/cookies) — on refresh, it relies on Google Identity Services' silent re-auth (`prompt({auto_select:true})`); if multiple Google accounts are signed into the browser, Google forces an explicit account-picker click (a platform-level privacy constraint). The reason for not persisting: a stored token would mean a GM removed from the whitelist could keep working in an already-open tab until the token naturally expires; without persistence, a whitelist change takes effect the moment the page is refreshed.
+**Google sign-in UI.** The sign-in UI only appears on page 1, auto-hidden from page 2 onward. There is no client-side persistence (no token in localStorage/cookies) — on refresh, it relies on Google Identity Services' silent re-auth (`auto_select` is turned on in `initialize()`, then `prompt()` is called with no arguments); if multiple Google accounts are signed into the browser, Google forces an explicit account-picker click (a platform-level privacy constraint). The reason for not persisting: a stored token would mean a GM removed from the whitelist could keep working in an already-open tab until the token naturally expires; without persistence, a whitelist change takes effect the moment the page is refreshed.
 
-**English demo (`/demo/`).** A public showcase version in English with the same flow as production, except: any Google account can use it (no whitelist), it calls `/demo-record` and `/demo-round`, copies `FirelessWar_Demo` instead of the production Template, and uses generic character names. Because it's open to everyone, its limits are tighter: `/demo-record` lookups and creations 10/hour each, `/demo-round` 10/minute (all global).
+**English demo (`/demo/`).** A public showcase version in English with the same flow as production, except: any Google account can use it (no whitelist), it calls `/demo-record` and `/demo-round`, copies `FirelessWar_Demo` instead of the production Template, and uses generic character names. Because it's open to everyone, its limits are tighter: `/demo-record` lookups and creations 10/hour each, `/demo-round` 10/minute (all global). `/demo-round` reads only demo session files (spreadsheets named `FirelessWar_Demo_` plus a date/time); any other spreadsheet is refused, and it never falls back to the configured production sheet — otherwise any Google account could use the demo to read other spreadsheets the Service Account can see.
 
 #### End-to-End Data Flow
 
@@ -275,5 +283,5 @@ GM signs in → enters a date/time → `GET /record` (with a Bearer token) looks
 
 - The three global toggles (`oniwara_out`/`mike_out`/`kouno_single`) and the most severe "city economy collapse" warning tier have only been verified with synthetic test data, not yet exercised against real toggled game-sheet state.
 - Whether the Final Day round (`FinalDayResult`) should get special display treatment is still undecided.
-- `GET /round?spreadsheet_id=` does not validate that the given ID is a legitimately-created session file — any Sheet ID the Service Account can read would be attempted.
+- A GM's `GET /round?spreadsheet_id=` does not validate that the given ID is a legitimately-created session file — any Sheet ID the Service Account can read would be attempted (only whitelisted GMs can call it; the demo's `/demo-round` reads demo session files only).
 - Reading a session right after creating it may still return 404 and show the create dialog again: lookups use Drive's filename search, which takes a few seconds to see a new file. Retrying after a few seconds works.
