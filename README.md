@@ -68,7 +68,7 @@ Flask,跑在 router-backend 這個共用服務裡:整個服務是一支 gunicorn
 1. Service Account 直接 `copy()`:報 `storageQuotaExceeded`——Service Account 沒有自己的 Drive 儲存額度,無法擁有新建立的檔案,這是 Google 對這種身分類型的結構性限制。
 2. OAuth(代表真人帳號)+ Google Picker:理論上能繞開額度問題,但實測下來,Picker 選取既有檔案後的授權登記一直沒有生效(`files.get` 持續回 404)。
 
-採用的方案:一支 **Google Apps Script**,部署成 Web App,後端用 HTTP 請求呼叫它(帶一組共用密鑰)。Apps Script 執行時用的是擁有者自己的 Google 帳號完整權限,不受上述兩個限制影響,`DriveApp.makeCopy()` 是 Google 原生的複製動作,公式、格式都完整保留。**這支 Apps Script 不在任何 git repo 裡**——它只存在於 Google 的 Apps Script 編輯器(script.google.com),透過網頁介面編輯與部署。
+採用的方案:一支 **Google Apps Script**,部署成 Web App,後端用 HTTP 請求呼叫它(帶一組共用密鑰)。Apps Script 執行時用的是擁有者自己的 Google 帳號完整權限,不受上述兩個限制影響,`DriveApp.makeCopy()` 是 Google 原生的複製動作,公式、格式都完整保留。程式碼在這個 repo 的 [`apps_script/Code.gs`](apps_script/Code.gs),要貼進 Google 的 Apps Script 編輯器(script.google.com)才會生效:改了這個檔案,就要到編輯器貼上並重新部署。密語和三個檔案／資料夾 ID 不寫在程式碼裡,存在 Apps Script 專案的「指令碼屬性」(`SECRET`、`FOLDER_ID`、`TEMPLATE_ID`、`DEMO_TEMPLATE_ID`),部署步驟寫在檔案開頭。
 
 **對外呼叫一律有逾時。** Google API 15 秒、Service Account 憑證更新 10 秒、Apps Script 30 秒。服務是好幾個專案共用的,一個卡住的外部呼叫不能一直佔著 thread。
 
@@ -212,7 +212,7 @@ Flask, running inside router-backend, a shared service: one gunicorn process (1 
 1. Direct Service Account `copy()`: fails with `storageQuotaExceeded` — Service Accounts have no Drive storage quota of their own and structurally cannot own newly-created files.
 2. OAuth (real user identity) + Google Picker: should sidestep the quota issue, but in testing, the authorization granted after picking an existing file never took effect (`files.get` kept returning 404).
 
-The approach used: a **Google Apps Script**, deployed as a Web App, called by the backend over HTTP (with a shared secret). Apps Script runs with the full permissions of its owner's Google account, sidestepping both limitations above — `DriveApp.makeCopy()` is Google's native copy operation and preserves formulas and formatting. **This Apps Script is not in any git repo** — it exists only inside Google's Apps Script editor (script.google.com), edited and deployed through that web interface.
+The approach used: a **Google Apps Script**, deployed as a Web App, called by the backend over HTTP (with a shared secret). Apps Script runs with the full permissions of its owner's Google account, sidestepping both limitations above — `DriveApp.makeCopy()` is Google's native copy operation and preserves formulas and formatting. Its code is [`apps_script/Code.gs`](apps_script/Code.gs) in this repo and only takes effect once pasted into Google's Apps Script editor (script.google.com): after changing the file, paste it there and redeploy. The secret and the three file/folder IDs are not in the code; they live in the Apps Script project's Script Properties (`SECRET`, `FOLDER_ID`, `TEMPLATE_ID`, `DEMO_TEMPLATE_ID`). The deployment steps are at the top of the file.
 
 **Every outside call has a timeout.** Google APIs 15 s, Service Account token refresh 10 s, Apps Script 30 s. The service is shared by several projects, so a stuck outside call must not hold a thread indefinitely.
 
