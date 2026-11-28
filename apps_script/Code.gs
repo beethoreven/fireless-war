@@ -17,8 +17,8 @@
  *   6. 部署後會拿到一個網址,格式類似:
  *      https://script.google.com/macros/s/AKfycb.../exec
  *      這組網址跟 SECRET,都要存進後端的環境變數,不要寫死在程式碼裡。
- *   7. 「觸發條件」新增一個時間驅動的觸發器執行 cleanupOldDemoFiles(例如每小時),
- *      demo 副本才會定期清掉。
+ *   7. (選用)想定期清掉 demo 副本,就在「觸發條件」新增一個時間驅動的觸發器執行
+ *      cleanupOldDemoFiles(例如每小時)。沒加觸發器,demo 副本與加進去的編輯者會一直留著。
  *
  * 用途:
  *   後端打 POST 請求過來,帶 datetime 參數,這支腳本複製 Template
